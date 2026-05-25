@@ -11,7 +11,7 @@
 	  },
     "autoload": {
         "psr-4": {
-            "SyntaxPilot\\Csrf\\": "src/"
+            "SyntaxPilot\\Security\\Csrf\\": "src/"
         }
     },
     "autoload-dev": {
