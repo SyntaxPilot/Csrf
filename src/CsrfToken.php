@@ -15,37 +15,37 @@ namespace SyntaxPilot\Security\Csrf;
  */
 final class CsrfToken
 {
-    /**
-     * Create a CSRF token.
-     *
-     * @param string $id    Token ID, usually tied to a form or action.
-     * @param string $value Token value.
-     */
     public function __construct(
         private readonly string $id,
         private readonly string $value,
+        private readonly ?int $expiresAt = null,
     ) {
     }
 
-    /**
-     * Get the token ID.
-     */
     public function id(): string
     {
         return $this->id;
     }
 
-    /**
-     * Get the token value.
-     */
     public function value(): string
     {
         return $this->value;
     }
 
-    /**
-     * Convert token to string.
-     */
+    public function expiresAt(): ?int
+    {
+        return $this->expiresAt;
+    }
+
+    public function isExpired(?int $now = null): bool
+    {
+        if ($this->expiresAt === null) {
+            return false;
+        }
+
+        return ($now ?? time()) >= $this->expiresAt;
+    }
+
     public function __toString(): string
     {
         return $this->value;

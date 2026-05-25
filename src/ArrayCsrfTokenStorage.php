@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Copyright (c) 2027 Nicholas English
  *
@@ -13,24 +12,22 @@ namespace SyntaxPilot\Security\Csrf;
 
 /**
  * In-memory CSRF token storage.
- *
- * Useful for testing.
  */
 final class ArrayCsrfTokenStorage implements CsrfTokenStorageInterface
 {
     /**
-     * @var array<string, string>
+     * @var array<string, CsrfTokenPayload>
      */
     private array $tokens = [];
 
-    public function get(string $id): ?string
+    public function get(string $id): ?CsrfTokenPayload
     {
         return $this->tokens[$id] ?? null;
     }
 
-    public function set(string $id, string $token): void
+    public function set(string $id, CsrfTokenPayload $payload): void
     {
-        $this->tokens[$id] = $token;
+        $this->tokens[$id] = $payload;
     }
 
     public function has(string $id): bool
@@ -46,5 +43,14 @@ final class ArrayCsrfTokenStorage implements CsrfTokenStorageInterface
     public function clear(): void
     {
         $this->tokens = [];
+    }
+
+    public function prune(): void
+    {
+        foreach ($this->tokens as $id => $payload) {
+            if ($payload->isExpired()) {
+                unset($this->tokens[$id]);
+            }
+        }
     }
 }

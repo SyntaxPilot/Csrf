@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Copyright (c) 2027 Nicholas English
  *
@@ -11,6 +10,11 @@ declare(strict_types=1);
 
 namespace SyntaxPilot\Security\Csrf;
 
+use SyntaxPilot\Security\Csrf\Contract\CsrfTokenGeneratorInterface;
+use SyntaxPilot\Security\Csrf\Exception\ExpiredCsrfTokenException;
+use SyntaxPilot\Security\Csrf\Exception\InvalidCsrfTokenException;
+use SyntaxPilot\Security\Csrf\Exception\MissingCsrfTokenException;
+
 /**
  * Manages CSRF tokens.
  */
@@ -18,88 +22,153 @@ final class CsrfTokenManager
 {
     public function __construct(
         private readonly CsrfTokenStorageInterface $storage,
-        private readonly CsrfTokenGenerator $generator = new CsrfTokenGenerator(),
+        private readonly CsrfTokenGeneratorInterface $generator = new CsrfTokenGenerator(),
+        private readonly CsrfTokenConfig $config = new CsrfTokenConfig(),
     ) {
     }
 
-    /**
-     * Get an existing token or generate one if missing.
-     *
-     * @param string $id Token ID, usually tied to a form or action.
-     */
     public function getToken(string $id): CsrfToken
     {
-        $value = $this->storage->get($id);
+        $payload = $this->storage->get($id);
 
-        if (!is_string($value) || $value === '') {
-            $value = $this->generator->generate();
-
-            $this->storage->set($id, $value);
+        if (!$payload instanceof CsrfTokenPayload || $payload->isExpired()) {
+            return $this->refreshToken($id);
         }
 
-        return new CsrfToken($id, $value);
+        return new CsrfToken(
+            id: $id,
+            value: $payload->value(),
+            expiresAt: $payload->expiresAt(),
+        );
     }
 
-    /**
-     * Generate and store a fresh token.
-     *
-     * @param string $id Token ID.
-     */
     public function refreshToken(string $id): CsrfToken
     {
-        $value = $this->generator->generate();
+        $payload = CsrfTokenPayload::create(
+            value: $this->generator->generate(),
+            ttl: $this->config->ttl(),
+            singleUse: $this->config->singleUse(),
+        );
 
-        $this->storage->set($id, $value);
+        $this->storage->set($id, $payload);
 
-        return new CsrfToken($id, $value);
+        return new CsrfToken(
+            id: $id,
+            value: $payload->value(),
+            expiresAt: $payload->expiresAt(),
+        );
     }
 
-    /**
-     * Check whether a token exists.
-     */
     public function hasToken(string $id): bool
     {
-        return $this->storage->has($id);
+        $payload = $this->storage->get($id);
+
+        return $payload instanceof CsrfTokenPayload && !$payload->isExpired();
     }
 
-    /**
-     * Validate a submitted token value.
-     *
-     * @param string      $id    Token ID.
-     * @param string|null $value Submitted token value.
-     */
-    public function isTokenValid(string $id, ?string $value): bool
+    public function validate(string $id, ?string $value): CsrfTokenResult
     {
         if (!is_string($value) || $value === '') {
-            return false;
+            return CsrfTokenResult::missing();
         }
 
-        $known = $this->storage->get($id);
+        $payload = $this->storage->get($id);
 
-        return is_string($known) && $known !== '' && hash_equals($known, $value);
+        if (!$payload instanceof CsrfTokenPayload) {
+            return CsrfTokenResult::unknown();
+        }
+
+        if ($payload->isExpired()) {
+            $this->storage->remove($id);
+
+            return CsrfTokenResult::expired();
+        }
+
+        if (!hash_equals($payload->value(), $value)) {
+            return CsrfTokenResult::mismatch();
+        }
+
+        if ($payload->singleUse()) {
+            $this->storage->remove($id);
+        }
+
+        return CsrfTokenResult::valid();
     }
 
-    /**
-     * Validate a submitted CsrfToken object.
-     */
-    public function isCsrfTokenValid(CsrfToken $token): bool
+    public function isTokenValid(string $id, ?string $value): bool
     {
-        return $this->isTokenValid($token->id(), $token->value());
+        return $this->validate($id, $value)->isValid();
     }
 
-    /**
-     * Remove a token.
-     */
+    public function validateOrFail(string $id, ?string $value): void
+    {
+        $result = $this->validate($id, $value);
+
+        if ($result->isValid()) {
+            return;
+        }
+
+        throw match ($result->reason()) {
+            'missing' => new MissingCsrfTokenException('Missing CSRF token.'),
+            'expired' => new ExpiredCsrfTokenException('Expired CSRF token.'),
+            default => new InvalidCsrfTokenException('Invalid CSRF token.'),
+        };
+    }
+
     public function removeToken(string $id): void
     {
         $this->storage->remove($id);
     }
 
-    /**
-     * Remove all CSRF tokens.
-     */
     public function clearTokens(): void
     {
         $this->storage->clear();
+    }
+
+    public function prune(): void
+    {
+        $this->storage->prune();
+    }
+
+    public function fieldName(): string
+    {
+        return $this->config->fieldName();
+    }
+
+    public function idFieldName(): string
+    {
+        return $this->config->idFieldName();
+    }
+
+    public function headerName(): string
+    {
+        return $this->config->headerName();
+    }
+
+    public function input(string $id): string
+    {
+        $token = $this->getToken($id);
+
+        return sprintf(
+            '<input type="hidden" name="%s" value="%s">' . "\n" .
+            '<input type="hidden" name="%s" value="%s">',
+            htmlspecialchars($this->config->fieldName(), ENT_QUOTES, 'UTF-8'),
+            htmlspecialchars($token->value(), ENT_QUOTES, 'UTF-8'),
+            htmlspecialchars($this->config->idFieldName(), ENT_QUOTES, 'UTF-8'),
+            htmlspecialchars($token->id(), ENT_QUOTES, 'UTF-8'),
+        );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function metaTags(string $id): array
+    {
+        $token = $this->getToken($id);
+
+        return [
+            'csrf-token-id' => $token->id(),
+            'csrf-token' => $token->value(),
+        ];
     }
 }
