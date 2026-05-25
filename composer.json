@@ -11,12 +11,12 @@
 	  },
     "autoload": {
         "psr-4": {
-            "SyntaxPilot\\Session\\": "src/"
+            "SyntaxPilot\\Csrf\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "SyntaxPilot\\Tests\\Session\\": "tests/"
+            "SyntaxPilot\\Tests\\Csrf\\": "tests/"
         }
     },
 	  "scripts": {
