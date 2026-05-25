@@ -1,5 +1,7 @@
 # Csrf
 
+[![PHP Composer](https://github.com/SyntaxPilot/Csrf/actions/workflows/php.yml/badge.svg)](https://github.com/SyntaxPilot/Csrf/actions/workflows/php.yml)
+
 ## Installation
 
 The best way to install this package is through composer. If you do not have composer installed you can install it directly from the [composer website](https://getcomposer.org/). After composer is successfully installed run the command line code below.
